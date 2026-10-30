@@ -1,0 +1,27 @@
+x-api-common: &api-common
+  build: .
+  image: url-shortner-api
+  restart: unless-stopped
+  env_file:
+    - .env.docker
+  expose:
+    - "3000"
+  networks:
+    - url-shortner-network
+
+services:
+  api1:
+    <<: *api-common
+    container_name: url-shortner-api1
+
+  api2:
+    <<: *api-common
+    container_name: url-shortner-api2
+
+  api3:
+    <<: *api-common
+    container_name: url-shortner-api3
+
+networks:
+  url-shortner-network:
+    external: true

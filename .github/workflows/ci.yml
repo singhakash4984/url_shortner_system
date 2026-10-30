@@ -40,3 +40,14 @@ jobs:
 
       - name: Verify production entry point
         run: test -f dist/server.js
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: url-shortner-api:ci

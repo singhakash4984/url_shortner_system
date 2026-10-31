@@ -109,6 +109,19 @@ jobs:
           docker compose version
           docker info --format 'Docker server: {{.ServerVersion}}'
 
+
+      - name: Prepare deployment environment
+        run: |
+          SOURCE_ENV="/home/demonking/Desktop/backend_development/url_shortner_system/backend/.env.docker"
+
+          test -f "$SOURCE_ENV" || {
+            echo "Deployment environment file is missing"
+            exit 1
+          }
+
+          install -m 600 "$SOURCE_ENV" backend/.env.docker
+          echo "Deployment environment file prepared"
+
       - name: Validate deployment configuration
         run: |
           test -f backend/docker-compose.yml

@@ -1,5 +1,5 @@
 
-name: URL Shortener CI
+name: URL Shortener CI/CD
 
 on:
   push:
@@ -73,7 +73,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
-    name: Deploy to Local Ubuntu
+    name: Rolling Deploy to Local Ubuntu
     needs: build
 
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -84,7 +84,12 @@ jobs:
       contents: read
       packages: read
 
+    concurrency:
+      group: url-shortner-local-production
+      cancel-in-progress: false
+
     timeout-minutes: 15
+
     env:
       IMAGE_TAG: sha-${{ github.sha }}
 
@@ -99,16 +104,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify local runner
+      - name: Verify deployment runner
         run: |
-          echo "GitHub Actions is running on my Ubuntu machine"
           echo "Hostname: $(hostname)"
           echo "User: $(whoami)"
-          echo "Architecture: $(uname -m)"
           docker --version
           docker compose version
           docker info --format 'Docker server: {{.ServerVersion}}'
-
 
       - name: Prepare deployment environment
         run: |
@@ -120,10 +122,159 @@ jobs:
           }
 
           install -m 600 "$SOURCE_ENV" backend/.env.docker
-          echo "Deployment environment file prepared"
 
       - name: Validate deployment configuration
         run: |
           test -f backend/docker-compose.yml
           docker network inspect url-shortner-network
-          docker compose -f backend/docker-compose.yml config --quiet
+          IMAGE_TAG="$IMAGE_TAG" docker compose \
+            -f backend/docker-compose.yml config --quiet
+
+      - name: Rolling deployment with rollback
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          COMPOSE_FILE="backend/docker-compose.yml"
+
+          services=(api1 api2 api3)
+          containers=(
+            url-shortner-api1
+            url-shortner-api2
+            url-shortner-api3
+          )
+
+          # Capture the old image before changing anything.
+          OLD_IMAGE=$(docker inspect url-shortner-api1 \
+            --format '{{.Config.Image}}')
+
+          OLD_TAG="${OLD_IMAGE##*:}"
+
+          echo "Previous image: $OLD_IMAGE"
+          echo "Target image: ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+
+          # Ensure all replicas currently use the same image.
+          for container in "${containers[@]}"; do
+            CURRENT_IMAGE=$(docker inspect "$container" \
+              --format '{{.Config.Image}}')
+
+            if [ "$CURRENT_IMAGE" != "$OLD_IMAGE" ]; then
+              echo "Replica image mismatch: $container"
+              echo "Expected: $OLD_IMAGE"
+              echo "Found: $CURRENT_IMAGE"
+              exit 1
+            fi
+          done
+
+          # Pull the new image before touching running containers.
+          IMAGE_TAG="$IMAGE_TAG" docker compose \
+            -f "$COMPOSE_FILE" pull api1 api2 api3
+
+          deploy_one() {
+            local service="$1"
+            local tag="$2"
+            local container="url-shortner-${service}"
+
+            echo "Deploying $service using tag $tag"
+
+            if ! IMAGE_TAG="$tag" docker compose \
+              -f "$COMPOSE_FILE" \
+              up -d --no-deps --no-build --force-recreate "$service"; then
+              echo "Failed to recreate $service"
+              return 1
+            fi
+
+            # Wait up to 60 seconds for Docker health.
+            for attempt in $(seq 1 30); do
+              local status
+
+              status=$(docker inspect "$container" \
+                --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' \
+                2>/dev/null || echo missing)
+
+              if [ "$status" = "healthy" ]; then
+                echo "$service is healthy"
+                return 0
+              fi
+
+              if [ "$status" = "unhealthy" ]; then
+                echo "$service became unhealthy"
+                break
+              fi
+
+              echo "$service health: $status ($attempt/30)"
+              sleep 2
+            done
+
+            echo "Health check failed for $service"
+            docker logs --tail 80 "$container" || true
+            return 1
+          }
+
+          rollback() {
+            local failed=0
+
+            echo "Starting rollback to previous image: $OLD_TAG"
+
+            for service in "${services[@]}"; do
+              if ! deploy_one "$service" "$OLD_TAG"; then
+                echo "Rollback failed for $service"
+                failed=1
+              fi
+            done
+
+            if [ "$failed" -ne 0 ]; then
+              echo "CRITICAL: Rollback was not fully successful"
+              return 1
+            fi
+
+            echo "Rollback completed successfully"
+          }
+
+          # Roll out one replica at a time.
+          for service in "${services[@]}"; do
+            if ! deploy_one "$service" "$IMAGE_TAG"; then
+              echo "Deployment failed. Rolling back."
+
+              if ! rollback; then
+                echo "CRITICAL: Manual intervention required"
+              fi
+
+              exit 1
+            fi
+          done
+
+          # Verify all three replicas after deployment.
+          for container in "${containers[@]}"; do
+            status=$(docker inspect "$container" \
+              --format '{{.State.Health.Status}}')
+
+            if [ "$status" != "healthy" ]; then
+              echo "$container failed final health verification"
+
+              if ! rollback; then
+                echo "CRITICAL: Manual intervention required"
+              fi
+
+              exit 1
+            fi
+          done
+
+          # Verify traffic through Nginx.
+          if ! curl --fail --silent --show-error \
+            --max-time 10 http://localhost/instance; then
+            echo "Nginx smoke test failed"
+
+            if ! rollback; then
+              echo "CRITICAL: Manual intervention required"
+            fi
+
+            exit 1
+          fi
+
+          echo
+          echo "Deployment successful"
+          echo "Image: ghcr.io/${GITHUB_REPOSITORY}:${IMAGE_TAG}"
+
+          IMAGE_TAG="$IMAGE_TAG" docker compose \
+            -f "$COMPOSE_FILE" ps api1 api2 api3

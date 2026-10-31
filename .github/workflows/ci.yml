@@ -11,12 +11,15 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build:
     name: Backend Build
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
 
     defaults:
       run:
@@ -68,3 +71,27 @@ jobs:
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    name: Test Local Ubuntu Runner
+    needs: build
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    runs-on: [self-hosted, Linux, X64, local-deploy]
+
+    permissions:
+      contents: read
+
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify local runner
+        run: |
+          echo "GitHub Actions is running on my Ubuntu machine"
+          echo "Hostname: $(hostname)"
+          echo "User: $(whoami)"
+          echo "Architecture: $(uname -m)"
+          docker --version
+          docker compose version
+          docker info --format 'Docker server: {{.ServerVersion}}'

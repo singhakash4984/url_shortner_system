@@ -1,6 +1,5 @@
 x-api-common: &api-common
-  build: .
-  image: url-shortner-api
+  image: ghcr.io/singhakash4984/url_shortner_system:${IMAGE_TAG:?IMAGE_TAG is required}
   restart: unless-stopped
   env_file:
     - .env.docker

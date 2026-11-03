@@ -19,7 +19,7 @@ app.use(cookieParser()) ;
 app.use('/api',apiRateLimiter) ;
 app.use('/api/v1',router) ;
 
-app.get('/health',(_req, res)=>{
+app.get('/',(_req, res)=>{
     res.status(200).json({
         success: true,
         message:"OK"

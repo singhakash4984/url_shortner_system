@@ -7,6 +7,7 @@ import {pinoHttp} from "pino-http";
 import { apiRateLimiter } from "./shared/middleware/rateLimiter.middleware.js";
 
 
+
 const app = express() ;
 
 app.set("trust proxy", "172.17.0.2");
@@ -17,6 +18,13 @@ app.use(express.json()) ;
 app.use(cookieParser()) ;
 app.use('/api',apiRateLimiter) ;
 app.use('/api/v1',router) ;
+
+app.get('/health',(_req, res)=>{
+    res.status(200).json({
+        success: true,
+        message:"OK"
+    })
+})
 
 
 

@@ -5,7 +5,7 @@ import { env } from "./env.js";
 export const pool = new Pool({
     connectionString: env.database.databaseUrl,
     max:10,
-    idleTimeoutMillis: 5000,
+    idleTimeoutMillis: 30000,
     connectionTimeoutMillis:5000
 })
 

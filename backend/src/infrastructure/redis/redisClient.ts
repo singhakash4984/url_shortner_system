@@ -3,8 +3,7 @@ import { env } from "../../config/env.js";
 
 export const redisClient = createClient({
     socket:{
-        host: env.redis.host,
-        port: env.redis.port,
+        
         connectTimeout: 5000,
         reconnectStrategy(retries){
             if(retries > 5){
@@ -14,7 +13,7 @@ export const redisClient = createClient({
         },
         
     },
-    password: env.redis.password
+    url:env.redis.url
 }) ;
 
 redisClient.on("error", (error)=>{

@@ -31,22 +31,12 @@ const envSchema = z.object({
     .string()
     .min(32),
 
-    REDIS_HOST: z
+    REDIS_URL: z
     .string()
-    .min(1)
-    .default("127.0.0.1"),
+    .trim()
+    .min(1),
 
-    REDIS_PORT: z
-    .coerce
-    .number()
-    .int()
-    .min(1)
-    .max(65535)
-    .default(6379),
-
-    REDIS_PASSWORD: z
-    .string()
-    .min(1)
+   
 
 }) ;
 
@@ -78,9 +68,7 @@ export const env = Object.freeze({
         baseUrl: config.BASE_URL
     },
     redis:{
-        host: config.REDIS_HOST,
-        port: config.REDIS_PORT,
-        password: config.REDIS_PASSWORD,
+       url: config.REDIS_URL
     }
 })
 

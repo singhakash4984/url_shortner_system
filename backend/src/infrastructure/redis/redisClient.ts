@@ -2,34 +2,36 @@ import { createClient } from "redis";
 import { env } from "../../config/env.js";
 
 export const redisClient = createClient({
-    socket:{
-        
-        connectTimeout: 5000,
-        reconnectStrategy(retries){
-            if(retries > 5){
-                return new Error("Redis reconnection attempts exceeded")
+    url: env.redis.url,
+    socket: {
+        connectTimeout: 10000,
+        reconnectStrategy: (retries) => {
+            if (retries > 5) {
+                return new Error("Redis connection failed after 5 retries");
             }
-            return Math.min(retries * 500,3000)
-        },
-        
-    },
-    url:env.redis.url
-}) ;
 
-redisClient.on("error", (error)=>{
-    console.error("Redis connection error", error.message)
-}) ;
+            return Math.min(retries * 1000, 5000);
+        }
+    }
+});
 
-redisClient.on("ready", ()=>{
-    console.error("Redis is ready")
-}) ;
+redisClient.on("error", (error) => {
+    console.error("[Redis] Error:", error.message);
+});
 
-redisClient.on("reconnecting", ()=>{
-    console.error("Reconnecting to redis...")
-}) ;
+redisClient.on("ready", () => {
+    console.info("[Redis] Connected successfully");
+});
 
+redisClient.on("reconnecting", () => {
+    console.warn("[Redis] Reconnecting...");
+});
 
-export const connectRedis = async():Promise<void> =>{
-    if(redisClient.isOpen) return ;
-    await redisClient.connect()
-}
+export const connectRedis = async (): Promise<void> => {
+    if (redisClient.isReady) return;
+
+    await redisClient.connect();
+    await redisClient.ping();
+
+    console.info("[Redis] Ping successful");
+};
